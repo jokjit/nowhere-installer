@@ -404,6 +404,39 @@ certificate_pin() {
     valid_pin "$CERT_PIN" || die '无法计算证书指纹。'
 }
 
+client_verification_wizard() {
+    if [ "${CERT_MODE:-generated}" = generated ]; then
+        CLIENT_TLS_QUERY="pin=$CERT_PIN"
+        CLIENT_TLS_LABEL="SNI：不需要（自签名证书使用 pin 指纹校验）"
+        return
+    fi
+    say '客户端证书校验：1) 使用证书指纹 pin  2) 使用域名 SNI（证书必须由系统信任的 CA 签发）'
+    ask '请选择' 2
+    case "$REPLY" in
+        1)
+            CLIENT_TLS_QUERY="pin=$CERT_PIN"
+            CLIENT_TLS_LABEL="SNI：不需要；pin：$CERT_PIN" ;;
+        2)
+            ask_host '证书中的 SNI 域名（例如 relay.example.com）'
+            case "$REPLY" in
+                *:*|\[*\]|[0-9]*.[0-9]*.[0-9]*.[0-9]*) die 'SNI 必须填写域名，不能填写 IP 地址。' ;;
+            esac
+            [ "$REPLY" != none ] || die 'SNI 不能填写 none。'
+            sni_name=$REPLY
+            CLIENT_TLS_QUERY="sni=$(url_encode "$sni_name")"
+            CLIENT_TLS_LABEL="SNI：$sni_name" ;;
+        *) die '无效的证书校验选项。' ;;
+    esac
+}
+
+show_node_info() {
+    say "节点端口：$listen_port（TCP + UDP）"
+    say "节点地址：$public_host"
+    say "$CLIENT_TLS_LABEL"
+    say '完整 Vector 节点：'
+    say "$CLIENT_URL"
+}
+
 portal_wizard() {
     say '配置 Portal 服务端：默认同时监听同一端口的 TCP 和 UDP。'
     ask_host '本机监听地址（0.0.0.0 为所有 IPv4；:: 为所有 IPv6）' 0.0.0.0
@@ -417,8 +450,10 @@ portal_wizard() {
     ask '请选择' 1
     case "$REPLY" in
         1)
+            CERT_MODE=generated
             generated_certificate ;;
         2)
+            CERT_MODE=custom
             ask '证书链 PEM 文件绝对路径'; cert_source=$REPLY
             ask '私钥 PEM 文件绝对路径'; key_source=$REPLY
             case "$cert_source:$key_source" in /*:/*) ;; *) die '证书和私钥必须使用绝对路径。' ;; esac
@@ -432,8 +467,9 @@ portal_wizard() {
     openssl pkey -in "$WORK_DIR/key.pem" -passin pass: -pubout > "$WORK_DIR/key.pub" 2>/dev/null || die '私钥无效；无人值守服务需要无密码私钥。'
     cmp -s "$WORK_DIR/cert.pub" "$WORK_DIR/key.pub" || die '证书和私钥不匹配。'
     certificate_pin "$WORK_DIR/cert.pem"
+    client_verification_wizard
     CONFIG_URL="portal://$ENCODED_KEY@$listen_host:$listen_port?tls=2&crt=$CONF_DIR/cert.pem&key=$CONF_DIR/key.pem&log=info"
-    CLIENT_URL="vector://$ENCODED_KEY@$public_host:$listen_port?up=tcp&down=tcp&pin=$CERT_PIN&socks=127.0.0.1:1080&log=info"
+    CLIENT_URL="vector://$ENCODED_KEY@$public_host:$listen_port?up=tcp&down=tcp&$CLIENT_TLS_QUERY&socks=127.0.0.1:1080&log=info"
     say "将监听 $listen_host:$listen_port（TCP + UDP）。请在主机防火墙及云安全组放行对应端口。"
 }
 
@@ -449,15 +485,18 @@ quick_portal_wizard() {
         public_host=$REPLY
     fi
     reuse_or_generate_key
+    CERT_MODE=generated
     generated_certificate
     openssl x509 -in "$WORK_DIR/cert.pem" -checkend 0 -noout >/dev/null || die '证书已过期或无法解析。'
     openssl x509 -in "$WORK_DIR/cert.pem" -pubkey -noout > "$WORK_DIR/cert.pub"
     openssl pkey -in "$WORK_DIR/key.pem" -passin pass: -pubout > "$WORK_DIR/key.pub" 2>/dev/null || die '私钥无效。'
     cmp -s "$WORK_DIR/cert.pub" "$WORK_DIR/key.pub" || die '证书和私钥不匹配。'
     certificate_pin "$WORK_DIR/cert.pem"
+    client_verification_wizard
     CONFIG_URL="portal://$ENCODED_KEY@$listen_host:$listen_port?tls=2&crt=$CONF_DIR/cert.pem&key=$CONF_DIR/key.pem&log=info"
-    CLIENT_URL="vector://$ENCODED_KEY@$public_host:$listen_port?up=tcp&down=tcp&pin=$CERT_PIN&socks=127.0.0.1:1080&log=info"
+    CLIENT_URL="vector://$ENCODED_KEY@$public_host:$listen_port?up=tcp&down=tcp&$CLIENT_TLS_QUERY&socks=127.0.0.1:1080&log=info"
     say "Portal 将监听 $listen_host:$listen_port（TCP + UDP）。"
+    show_node_info
 }
 
 ask_transport() {
@@ -472,6 +511,9 @@ vector_wizard() {
     ask_host 'Portal IP 或域名'; remote_host=$REPLY
     ask_port 'Portal 端口' 2000; remote_port=$REPLY
     ask_key 'Portal 共享密钥（填写原始密钥，不要填写 URL 编码后的值）' required
+    ask 'Spec（兼容字段，Nowhere 官方协议不使用，可留空）' ''
+    spec_value=$REPLY
+    [ -z "$spec_value" ] || say 'Spec 已记录为兼容输入，生成 URL 时按 Nowhere 官方格式忽略。'
     ask_transport '上行协议'; transport_up=$REPLY
     ask_transport '下行协议'; transport_down=$REPLY
     ask_host '本地 SOCKS5 监听 IP' 127.0.0.1; socks_host=$REPLY
@@ -506,12 +548,19 @@ vector_wizard() {
             tls_query="sni=$REPLY" ;;
         *) die '无效的校验方式。' ;;
     esac
-    CONFIG_URL="vector://$ENCODED_KEY@$remote_host:$remote_port?up=$transport_up&down=$transport_down&$tls_query&socks=$socks_value&log=info"
+    ask 'ALPN（留空使用 Nowhere 默认 now/1）' ''
+    alpn_value=$REPLY
+    case "$alpn_value" in
+        *[!a-zA-Z0-9._/-]*) [ -z "$alpn_value" ] || die 'ALPN 只能包含字母、数字、点、下划线、斜线或连字符。' ;;
+    esac
+    alpn_query=
+    [ -z "$alpn_value" ] || alpn_query="&alpn=$(url_encode "$alpn_value")"
+    CONFIG_URL="vector://$ENCODED_KEY@$remote_host:$remote_port?up=$transport_up&down=$transport_down&$tls_query${alpn_query}&socks=$socks_value&log=info"
     CLIENT_URL=
     say "本地 SOCKS5：$socks_host:$socks_port"
 }
 
-quick_vector_wizard() {
+quick_vector_url_wizard() {
     say '快速安装 Vector：粘贴 Portal 输出的完整 Vector URL 即可。'
     while :; do
         ask 'Vector URL'
@@ -526,6 +575,56 @@ quick_vector_wizard() {
         say 'Vector 将使用 URL 中的 SOCKS5 设置。'
         return
     done
+}
+
+quick_vector_wizard() {
+    say '快速安装 Vector：1) 按地址、端口、Key 等字段填写  2) 粘贴完整 Vector URL'
+    ask '请选择' 1
+    case "$REPLY" in
+        1)
+            ask_host '地址（Portal 公网 IP 或域名）'; remote_host=$REPLY
+            ask_port '端口' 2000; remote_port=$REPLY
+            ask_key 'Key（Portal 共享密钥，填写原始值）' required
+            ask 'Spec（兼容字段，Nowhere 官方协议不使用，可留空）' ''
+            spec_value=$REPLY
+            [ -z "$spec_value" ] || say 'Spec 已记录为兼容输入，生成 URL 时按 Nowhere 官方格式忽略。'
+            ask_transport '网络（上行和下行使用同一协议）'; transport=$REPLY
+            ask 'TLS SNI（域名证书填写；自签证书请留空并填写 pin）' ''
+            sni_value=$REPLY
+            case "$sni_value" in
+                *:*|\[*\]|*[!a-zA-Z0-9.-]*)
+                    [ -z "$sni_value" ] || die 'TLS SNI 必须是 DNS 域名，不能填写 IP、端口或路径。' ;;
+            esac
+            tls_query=
+            if [ -n "$sni_value" ]; then
+                tls_query="&sni=$(url_encode "$sni_value")"
+            else
+                ask '证书 SHA-256 pin（自签证书必填；可带冒号）' ''
+                pin_value=$(printf '%s' "$REPLY" | tr -d ':' | tr 'A-F' 'a-f')
+                valid_pin "$pin_value" || die '未填写有效 pin。域名证书请返回上一步填写 TLS SNI。'
+                tls_query="&pin=$pin_value"
+            fi
+            ask 'ALPN（留空使用 Nowhere 默认 now/1）' ''
+            alpn_value=$REPLY
+            case "$alpn_value" in
+                *[!a-zA-Z0-9._/-]*) [ -z "$alpn_value" ] || die 'ALPN 只能包含字母、数字、点、下划线、斜线或连字符。' ;;
+            esac
+            alpn_query=
+            [ -z "$alpn_value" ] || alpn_query="&alpn=$(url_encode "$alpn_value")"
+            CONFIG_URL="vector://$ENCODED_KEY@$remote_host:$remote_port?up=$transport&down=$transport${tls_query}${alpn_query}&socks=127.0.0.1:1080&log=info"
+            CLIENT_URL=
+            say 'Vector 配置完成，本地 SOCKS5：127.0.0.1:1080'
+            say '注意：Spec 留空或填写都不会写入 vector://，因为 Nowhere 官方 URL 没有 Spec 参数。'
+            say "节点地址：$remote_host"
+            say "节点端口：$remote_port"
+            [ -n "$sni_value" ] && say "TLS SNI：$sni_value" || say "TLS SNI：不设置（pin：$pin_value）"
+            [ -n "$alpn_value" ] && say "ALPN：$alpn_value" || say 'ALPN：now/1（默认）'
+            say '完整 Vector 节点：'
+            say "$CONFIG_URL"
+            ;;
+        2) quick_vector_url_wizard ;;
+        *) die '无效的 Vector 配置选项。' ;;
+    esac
 }
 
 configure_wizard() {
@@ -659,6 +758,7 @@ install_action() {
         say "Portal 的客户端连接配置已保存到：$CONF_DIR/client.url（权限 600）"
         say '复制下面这条 URL 到客户端，选择“快速安装 Vector”即可：'
         cat "$CONF_DIR/client.url"
+        say "节点端口：$(sed -n 's#^vector://[^@]*@.*:\([0-9][0-9]*\)?.*#\1#p' "$CONF_DIR/client.url" | head -n 1)"
     fi
 }
 

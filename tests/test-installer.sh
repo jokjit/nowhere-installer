@@ -87,6 +87,7 @@ if [ "${1:-}" = --case ]; then
 2001:db8::1
 443
 a@b:&+%
+
 tcp
 udp
 0.0.0.0
@@ -95,6 +96,7 @@ u@:x
 p&+:%
 1
 AA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+
 INPUT
             case "$CONFIG_URL" in
                 'vector://a%40b%3A%26%2B%25@[2001:db8::1]:443?'*) ;; *) exit 1 ;;
@@ -107,6 +109,7 @@ INPUT
 relay.example
 2000
 secret
+
 mix
 mix
 127.0.0.1
@@ -114,15 +117,42 @@ mix
 n
 2
 relay.example
+
 INPUT
             printf '%s\n' "$CONFIG_URL" > "$TEST_ROOT/url"
             assert_has "$TEST_ROOT/url" '&sni=relay.example&socks=127.0.0.1:1080&' ;;
         quick_vector)
             quick_vector_wizard <<'INPUT'
+2
 vector://secret@relay.example:2000?up=tcp&down=tcp&pin=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&socks=127.0.0.1:1080&log=info
 INPUT
             assert_eq "$CONFIG_URL" 'vector://secret@relay.example:2000?up=tcp&down=tcp&pin=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&socks=127.0.0.1:1080&log=info'
             [ -z "$CLIENT_URL" ] ;;
+        quick_vector_fields)
+            quick_vector_wizard <<'INPUT'
+1
+relay.example
+443
+secret key
+compat-spec
+tcp
+relay.example
+now/1
+INPUT
+            assert_eq "$CONFIG_URL" 'vector://secret%20key@relay.example:443?up=tcp&down=tcp&sni=relay.example&alpn=now%2F1&socks=127.0.0.1:1080&log=info'
+            [ -z "$CLIENT_URL" ]
+            quick_vector_wizard <<'INPUT'
+1
+relay.example
+443
+secret
+
+udp
+
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+INPUT
+            assert_eq "$CONFIG_URL" 'vector://secret@relay.example:443?up=udp&down=udp&pin=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&socks=127.0.0.1:1080&log=info' ;;
         quick_portal)
             detect_public_host() { public_host=203.0.113.9; return 0; }
             generated_certificate() { printf 'test-cert\n' > "$WORK_DIR/cert.pem"; printf 'test-key\n' > "$WORK_DIR/key.pem"; }
@@ -337,7 +367,7 @@ PACKAGE
 fi
 
 for case_name in ports hosts encoding architectures pins no_eval input_fd eof \
-    vector_wizard vector_sni quick_vector quick_portal portal_certificate systemd_template openrc_template \
+    vector_wizard vector_sni quick_vector quick_vector_fields quick_portal portal_certificate systemd_template openrc_template \
     rollback_active rollback_stopped rollback_failure menu_errexit crash_loop healthy_service dead_service \
     install update failed_update failed_install reinstall checksum_failure archive_members archive_elf \
     deps_apt-get deps_apk deps_dnf deps_yum deps_zypper deps_pacman uninstall_keep uninstall_purge; do
