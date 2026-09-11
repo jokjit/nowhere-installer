@@ -1,11 +1,12 @@
 #!/bin/sh
 # Offline behavior tests. All installer writes are redirected into a temp tree.
 # Tests intentionally pass literal shell metacharacters, never expansions.
-# shellcheck disable=SC2016
+# shellcheck disable=SC2016,SC2329
 set -eu
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 NOWHERE_TEST_SOURCE_ONLY=1
 export NOWHERE_TEST_SOURCE_ONLY
+# Git for Windows path conversion is adjusted per test shell below.
 # shellcheck source=../nowhere.sh
 . "$SCRIPT_DIR/nowhere.sh"
 TEST_ROOT=$(mktemp -d)
@@ -34,6 +35,7 @@ if [ "${1:-}" = --case ]; then
     # Normalize only that host-tool output; Linux tests use OpenSSL unchanged.
     case "$(uname -s)" in
         MINGW*|MSYS*)
+            MSYS2_ARG_CONV_EXCL='/CN='; export MSYS2_ARG_CONV_EXCL
             openssl() {
                 if [ "$1" = rand ]; then
                     command openssl "$@" > "$TEST_ROOT/rand-output" || return 1
@@ -115,7 +117,29 @@ relay.example
 INPUT
             printf '%s\n' "$CONFIG_URL" > "$TEST_ROOT/url"
             assert_has "$TEST_ROOT/url" '&sni=relay.example&socks=127.0.0.1:1080&' ;;
+        quick_vector)
+            quick_vector_wizard <<'INPUT'
+vector://secret@relay.example:2000?up=tcp&down=tcp&pin=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&socks=127.0.0.1:1080&log=info
+INPUT
+            assert_eq "$CONFIG_URL" 'vector://secret@relay.example:2000?up=tcp&down=tcp&pin=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&socks=127.0.0.1:1080&log=info'
+            [ -z "$CLIENT_URL" ] ;;
+        quick_portal)
+            detect_public_host() { public_host=203.0.113.9; return 0; }
+            generated_certificate() { printf 'test-cert\n' > "$WORK_DIR/cert.pem"; printf 'test-key\n' > "$WORK_DIR/key.pem"; }
+            certificate_pin() { CERT_PIN=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; }
+            openssl() { if [ "$1" = rand ]; then printf '%064d\n' 1; else return 0; fi; }
+            quick_portal_wizard <<'INPUT'
+2000
+INPUT
+            case "$CONFIG_URL" in portal://*'@0.0.0.0:2000?tls=2&crt='*) ;; *) exit 1 ;; esac
+            case "$CLIENT_URL" in vector://*'@203.0.113.9:2000?up=tcp&down=tcp&pin='*) ;; *) exit 1 ;; esac
+            valid_pin "$CERT_PIN"
+            [ -s "$WORK_DIR/cert.pem" ] ;;
         portal_certificate)
+            generated_certificate() { printf '%s\n' 'BEGIN CERTIFICATE' > "$WORK_DIR/cert.pem"; printf 'test-key\n' > "$WORK_DIR/key.pem"; }
+            certificate_pin() { CERT_PIN=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; }
+            openssl() { if [ "$1" = rand ]; then printf '%064d\n' 1; else return 0; fi; }
+            cmp() { return 0; }
             portal_wizard <<'INPUT'
 127.0.0.1
 2000
@@ -313,7 +337,7 @@ PACKAGE
 fi
 
 for case_name in ports hosts encoding architectures pins no_eval input_fd eof \
-    vector_wizard vector_sni portal_certificate systemd_template openrc_template \
+    vector_wizard vector_sni quick_vector quick_portal portal_certificate systemd_template openrc_template \
     rollback_active rollback_stopped rollback_failure menu_errexit crash_loop healthy_service dead_service \
     install update failed_update failed_install reinstall checksum_failure archive_members archive_elf \
     deps_apt-get deps_apk deps_dnf deps_yum deps_zypper deps_pacman uninstall_keep uninstall_purge; do

@@ -359,6 +359,44 @@ ask_key() {
     ENCODED_KEY=$(url_encode "$SHARED_KEY")
 }
 
+generated_certificate() {
+    if [ -s "$CONF_DIR/cert.pem" ] && [ -s "$CONF_DIR/key.pem" ]; then
+        cp "$CONF_DIR/cert.pem" "$WORK_DIR/cert.pem"
+        cp "$CONF_DIR/key.pem" "$WORK_DIR/key.pem"
+        say '复用已保存的证书，保持客户端指纹不变。'
+    else
+        openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 \
+            -subj '/CN=nowhere' -keyout "$WORK_DIR/key.pem" -out "$WORK_DIR/cert.pem" \
+            > "$WORK_DIR/openssl.log" 2>&1 || die '生成证书失败。'
+    fi
+}
+
+detect_public_host() {
+    public_host=
+    for public_ip_url in https://api.ipify.org https://ifconfig.me/ip; do
+        public_candidate=$(curl --fail --silent --show-error --connect-timeout 5 --max-time 8 \
+            "$public_ip_url" 2>/dev/null | tr -d ' \r\n' || :)
+        if valid_host "$public_candidate"; then
+            public_host=$(url_host "$public_candidate")
+            return 0
+        fi
+    done
+    return 1
+}
+
+reuse_or_generate_key() {
+    ENCODED_KEY=
+    if [ -s "$CONF_DIR/service.url" ]; then
+        ENCODED_KEY=$(sed -n 's#^portal://\([^@]*\)@.*#\1#p' "$CONF_DIR/service.url" | head -n 1)
+    fi
+    if [ -z "$ENCODED_KEY" ]; then
+        SHARED_KEY=$(openssl rand -hex 32)
+        ENCODED_KEY=$(url_encode "$SHARED_KEY")
+    else
+        say '复用已保存的共享密钥。'
+    fi
+}
+
 certificate_pin() {
     openssl x509 -in "$1" -outform DER -out "$WORK_DIR/cert.der" || die '无法解析证书。'
     CERT_PIN=$(sha256sum "$WORK_DIR/cert.der")
@@ -379,15 +417,7 @@ portal_wizard() {
     ask '请选择' 1
     case "$REPLY" in
         1)
-            if [ -s "$CONF_DIR/cert.pem" ] && [ -s "$CONF_DIR/key.pem" ]; then
-                cp "$CONF_DIR/cert.pem" "$WORK_DIR/cert.pem"
-                cp "$CONF_DIR/key.pem" "$WORK_DIR/key.pem"
-                say '复用已保存的证书，保持客户端指纹不变。'
-            else
-                openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 \
-                    -subj '/CN=nowhere' -keyout "$WORK_DIR/key.pem" -out "$WORK_DIR/cert.pem" \
-                    > "$WORK_DIR/openssl.log" 2>&1 || die '生成证书失败。'
-            fi ;;
+            generated_certificate ;;
         2)
             ask '证书链 PEM 文件绝对路径'; cert_source=$REPLY
             ask '私钥 PEM 文件绝对路径'; key_source=$REPLY
@@ -405,6 +435,29 @@ portal_wizard() {
     CONFIG_URL="portal://$ENCODED_KEY@$listen_host:$listen_port?tls=2&crt=$CONF_DIR/cert.pem&key=$CONF_DIR/key.pem&log=info"
     CLIENT_URL="vector://$ENCODED_KEY@$public_host:$listen_port?up=tcp&down=tcp&pin=$CERT_PIN&socks=127.0.0.1:1080&log=info"
     say "将监听 $listen_host:$listen_port（TCP + UDP）。请在主机防火墙及云安全组放行对应端口。"
+}
+
+quick_portal_wizard() {
+    say '快速安装 Portal：只需输入端口，密钥和证书会自动生成。'
+    listen_host=0.0.0.0
+    ask_port '监听端口' 2000
+    listen_port=$REPLY
+    if detect_public_host; then
+        say "自动检测到公网地址：$public_host"
+    else
+        ask_host '客户端连接用的公网 IP 或域名'
+        public_host=$REPLY
+    fi
+    reuse_or_generate_key
+    generated_certificate
+    openssl x509 -in "$WORK_DIR/cert.pem" -checkend 0 -noout >/dev/null || die '证书已过期或无法解析。'
+    openssl x509 -in "$WORK_DIR/cert.pem" -pubkey -noout > "$WORK_DIR/cert.pub"
+    openssl pkey -in "$WORK_DIR/key.pem" -passin pass: -pubout > "$WORK_DIR/key.pub" 2>/dev/null || die '私钥无效。'
+    cmp -s "$WORK_DIR/cert.pub" "$WORK_DIR/key.pub" || die '证书和私钥不匹配。'
+    certificate_pin "$WORK_DIR/cert.pem"
+    CONFIG_URL="portal://$ENCODED_KEY@$listen_host:$listen_port?tls=2&crt=$CONF_DIR/cert.pem&key=$CONF_DIR/key.pem&log=info"
+    CLIENT_URL="vector://$ENCODED_KEY@$public_host:$listen_port?up=tcp&down=tcp&pin=$CERT_PIN&socks=127.0.0.1:1080&log=info"
+    say "Portal 将监听 $listen_host:$listen_port（TCP + UDP）。"
 }
 
 ask_transport() {
@@ -458,10 +511,33 @@ vector_wizard() {
     say "本地 SOCKS5：$socks_host:$socks_port"
 }
 
+quick_vector_wizard() {
+    say '快速安装 Vector：粘贴 Portal 输出的完整 Vector URL 即可。'
+    while :; do
+        ask 'Vector URL'
+        case "$REPLY" in
+            vector://*'@'*'?'*'socks='*) ;;
+            *) warn '请粘贴以 vector:// 开头、包含 socks= 的完整 URL。'; continue ;;
+        esac
+        case "$REPLY" in *[![:print:]]*|*' '*|*'	'*) warn 'URL 不能包含空格或换行。'; continue ;; esac
+        [ "${#REPLY}" -le 4096 ] || die 'URL 太长。'
+        CONFIG_URL=$REPLY
+        CLIENT_URL=
+        say 'Vector 将使用 URL 中的 SOCKS5 设置。'
+        return
+    done
+}
+
 configure_wizard() {
-    say '安装角色：1) Portal 服务端  2) Vector 客户端'
+    say '一键部署：1) 快速安装 Portal（服务器）  2) 快速安装 Vector（客户端）  3) 高级 Portal  4) 高级 Vector'
     ask '请选择' 1
-    case "$REPLY" in 1) portal_wizard ;; 2) vector_wizard ;; *) die '无效的角色选项。' ;; esac
+    case "$REPLY" in
+        1) quick_portal_wizard ;;
+        2) quick_vector_wizard ;;
+        3) portal_wizard ;;
+        4) vector_wizard ;;
+        *) die '无效的角色选项。' ;;
+    esac
     printf '%s\n' "$CONFIG_URL" > "$WORK_DIR/service.url"
     printf '%s\n' "$CLIENT_URL" > "$WORK_DIR/client.url"
 }
@@ -581,6 +657,8 @@ install_action() {
     say "管理命令：sudo $MANAGER"
     if [ -s "$CONF_DIR/client.url" ]; then
         say "Portal 的客户端连接配置已保存到：$CONF_DIR/client.url（权限 600）"
+        say '复制下面这条 URL 到客户端，选择“快速安装 Vector”即可：'
+        cat "$CONF_DIR/client.url"
     fi
 }
 
