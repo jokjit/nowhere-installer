@@ -1623,12 +1623,33 @@ _install_sing_box_custom() {
         rm -rf "$temp_dir"
         return 1
     fi
-    if ! "$extracted_bin" version >/dev/null 2>&1; then
-        _error "下载的 Nowhere 核心无法执行，已拒绝安装。"
+    local elf_machine expected_machine
+    elf_machine=$(od -An -tx1 -j18 -N2 "$extracted_bin" 2>/dev/null | tr -d ' \n')
+    case "$(uname -m 2>/dev/null)" in
+        x86_64|amd64) expected_machine="3e00" ;;
+        *) expected_machine="" ;;
+    esac
+    if [ -n "$expected_machine" ] && [ "$elf_machine" != "$expected_machine" ]; then
+        _error "Nowhere 核心架构不匹配：服务器 $(uname -m)，核心 ELF e_machine 0x${elf_machine:-未知}。当前归档只支持 x86_64。"
         rm -rf "$temp_dir"
         return 1
     fi
-    extracted_version=$("$extracted_bin" version 2>/dev/null | sed -n 's/^sing-box version \([^[:space:]]*\).*/\1/p' | head -n 1)
+    local version_output version_status
+    version_output=$("$extracted_bin" version 2>&1)
+    version_status=$?
+    if [ "$version_status" -ne 0 ]; then
+        _error "下载的 Nowhere 核心无法执行（架构: $(uname -m 2>/dev/null || printf unknown)），已拒绝安装。"
+        [ -n "$version_output" ] && _error "核心输出: ${version_output}"
+        if command -v file >/dev/null 2>&1; then
+            _error "核心文件: $(file -b "$extracted_bin" 2>/dev/null || true)"
+        fi
+        if command -v ldd >/dev/null 2>&1; then
+            _error "动态链接检查: $(ldd "$extracted_bin" 2>&1 | head -n 3 || true)"
+        fi
+        rm -rf "$temp_dir"
+        return 1
+    fi
+    extracted_version=$(printf '%s\n' "$version_output" | sed -n 's/^sing-box version \([^[:space:]]*\).*/\1/p' | head -n 1)
     [ -n "$extracted_version" ] || extracted_version="nowhere"
 
     if [ -s "$CONFIG_FILE" ]; then
