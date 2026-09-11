@@ -512,7 +512,7 @@ ask_transport() {
 vector_wizard() {
     say '配置 Vector 客户端：本地 SOCKS5 默认只允许本机访问。'
     ask_host 'Portal IP 或域名'; remote_host=$REPLY
-    ask_port 'Portal 端口' 2000; remote_port=$REPLY
+    ask_port 'Portal 端口（必须手动指定）' ''; remote_port=$REPLY
     ask_key 'Portal 共享密钥（填写原始密钥，不要填写 URL 编码后的值）' required
     ask 'Spec（兼容字段，Nowhere 官方协议不使用，可留空）' ''
     spec_value=$REPLY
