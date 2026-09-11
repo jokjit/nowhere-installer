@@ -134,7 +134,7 @@ INPUT
             quick_vector_wizard <<'INPUT'
 1
 
-
+2000
 
 
 INPUT

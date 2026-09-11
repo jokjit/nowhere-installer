@@ -442,7 +442,7 @@ portal_wizard() {
     say '配置 Portal 服务端：默认同时监听同一端口的 TCP 和 UDP。'
     ask_host '本机监听地址（0.0.0.0 为所有 IPv4；:: 为所有 IPv6）' 0.0.0.0
     listen_host=$REPLY
-    ask_port '监听端口' 2000
+    ask_port '监听端口（必须手动指定）' ''
     listen_port=$REPLY
     ask_host '供客户端连接的公网 IP 或域名（不自动探测）'
     public_host=$REPLY
@@ -477,7 +477,7 @@ portal_wizard() {
 quick_portal_wizard() {
     say '快速安装 Portal：地址自动使用公网 IP，密钥和证书自动生成。'
     listen_host=0.0.0.0
-    ask_port '监听端口' 2000
+    ask_port '监听端口（必须手动指定）' ''
     listen_port=$REPLY
     ask_transport '客户端网络（上行和下行使用同一协议）'; transport=$REPLY
     if detect_public_host; then
@@ -591,7 +591,7 @@ quick_vector_wizard() {
                 public_host=
             fi
             ask_host '地址（留空使用默认公网 IP）' "${public_host:-}"; remote_host=$REPLY
-            ask_port '端口' 2000; remote_port=$REPLY
+            ask_port '端口（必须手动指定）' ''; remote_port=$REPLY
             if [ -s "$CONF_DIR/service.url" ]; then
                 ENCODED_KEY=$(sed -n 's#^portal://\([^@]*\)@.*#\1#p' "$CONF_DIR/service.url" | head -n 1)
                 [ -n "$ENCODED_KEY" ] || ask_key 'Key（Portal 共享密钥，填写原始值）' required
