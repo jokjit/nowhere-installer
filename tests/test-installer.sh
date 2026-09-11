@@ -156,11 +156,18 @@ INPUT
             quick_portal_wizard <<'INPUT'
 2000
 tcp
+
 INPUT
             case "$CONFIG_URL" in portal://*'@0.0.0.0:2000?tls=2&crt='*) ;; *) exit 1 ;; esac
             case "$CLIENT_URL" in vector://*'@203.0.113.9:2000?up=tcp&down=tcp&sni=swdist.apple.com&pin='*) ;; *) exit 1 ;; esac
             valid_pin "$CERT_PIN"
-            [ -s "$WORK_DIR/cert.pem" ] ;;
+            [ -s "$WORK_DIR/cert.pem" ]
+            quick_portal_wizard <<'INPUT'
+443
+mix
+proxy.example
+INPUT
+            case "$CLIENT_URL" in vector://*'@proxy.example:443?up=mix&down=mix&sni=swdist.apple.com&pin='*) ;; *) exit 1 ;; esac ;;
         portal_certificate)
             generated_certificate() { printf '%s\n' 'BEGIN CERTIFICATE' > "$WORK_DIR/cert.pem"; printf 'test-key\n' > "$WORK_DIR/key.pem"; }
             certificate_pin() { CERT_PIN=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; }

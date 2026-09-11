@@ -481,11 +481,13 @@ quick_portal_wizard() {
     listen_port=$REPLY
     ask_transport '客户端网络（上行和下行使用同一协议）'; transport=$REPLY
     if detect_public_host; then
-        say "自动检测到公网地址：$public_host"
+        say "检测到服务器公网地址：$public_host"
     else
-        ask_host '客户端连接用的公网 IP 或域名'
-        public_host=$REPLY
+        public_host=
+        warn '无法自动检测公网地址，请手动填写客户端连接地址。'
     fi
+    ask_host '客户端连接地址（可填写域名，留空使用检测地址）' "${public_host:-}"
+    public_host=$REPLY
     reuse_or_generate_key
     CERT_MODE=generated
     generated_certificate
