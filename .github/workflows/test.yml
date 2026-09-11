@@ -1,0 +1,41 @@
+name: Installer checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint and exercise dash / bash
+        run: |
+          shellcheck -x -P SCRIPTDIR -s sh nowhere.sh tests/test-installer.sh
+          dash -n nowhere.sh
+          TEST_SHELL=dash dash tests/test-installer.sh
+          TEST_SHELL=bash bash tests/test-installer.sh
+      - name: Exercise Alpine BusyBox ash
+        run: |
+          docker run --rm -v "$PWD:/work:ro" -w /work alpine:3.22 sh -c '
+            apk add --no-cache openssl coreutils tar gzip
+            sh -n nowhere.sh
+            sh tests/test-installer.sh
+          '
+  official-binary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Download and verify known upstream binary
+        run: |
+          curl --fail --location --proto '=https' --proto-redir '=https' \
+            https://github.com/NodePassProject/Nowhere/releases/download/v1.8.3/nowhere-x86_64-unknown-linux-musl.tar.gz \
+            --output /tmp/nowhere.tar.gz
+          echo '61c383b58dcfcee59de62443bcc48be91fb686a1764398f5d9edb06b2a79dfbf  /tmp/nowhere.tar.gz' | sha256sum -c -
+          mkdir /tmp/nowhere-smoke-bin
+          tar -xzf /tmp/nowhere.tar.gz -C /tmp/nowhere-smoke-bin nowhere
+      - name: Verify loopback Portal / Vector flows
+        run: node tests/upstream-smoke.mjs /tmp/nowhere-smoke-bin/nowhere
