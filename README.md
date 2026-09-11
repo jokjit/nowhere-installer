@@ -115,16 +115,16 @@ Portal 默认同时提供 TCP 和 UDP。主机防火墙、云厂商安全组和 
 
 ## 发布为一行下载命令
 
-当前脚本仅保存在本工作区，尚未上传到公开地址。将其发布到自己的 GitHub 仓库后，把以下占位符替换为真实地址：
+本项目已发布到 GitHub：<https://github.com/jokjit/nowhere-installer>。
 
 ```sh
-curl -fsSL 'https://raw.githubusercontent.com/你的账号/你的仓库/main/nowhere.sh' -o nowhere.sh && sudo sh nowhere.sh
+curl -fsSL 'https://raw.githubusercontent.com/jokjit/nowhere-installer/master/nowhere.sh' -o nowhere.sh && sudo sh nowhere.sh
 ```
 
 没有 curl 但有 wget 的机器也可以：
 
 ```sh
-wget -O nowhere.sh 'https://raw.githubusercontent.com/你的账号/你的仓库/main/nowhere.sh' && sh nowhere.sh
+wget -O nowhere.sh 'https://raw.githubusercontent.com/jokjit/nowhere-installer/master/nowhere.sh' && sh nowhere.sh
 ```
 
 推荐先保存后执行，便于安装时自动保存管理入口。通过 `curl | sudo sh` 运行时，脚本从 `/dev/tty` 读取交互输入，但无法自动保存原始脚本为管理命令。
