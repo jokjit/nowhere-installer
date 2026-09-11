@@ -1394,8 +1394,10 @@ _install_dependencies() {
             fi
         done
         _archive_extractor >/dev/null 2>&1 || missing_cached="$missing_cached 7z"
-        if command -v apk >/dev/null 2>&1 && [ ! -e /lib/libresolv.so.2 ] && [ ! -e /lib64/libresolv.so.2 ]; then
-            missing_cached="$missing_cached gcompat"
+        if command -v apk >/dev/null 2>&1; then
+            if ! apk info -e gcompat >/dev/null 2>&1 || ! apk info -e libc6-compat >/dev/null 2>&1; then
+                missing_cached="$missing_cached gcompat libc6-compat"
+            fi
         fi
         if ! _is_podman_environment && ! command -v nft &>/dev/null; then
             missing_cached="$missing_cached nftables"
@@ -1421,7 +1423,7 @@ _install_dependencies() {
     # gcompat before the execution probe; it provides libresolv.so.2 and the
     # other glibc compatibility libraries needed by the core.
     if command -v apk >/dev/null 2>&1; then
-        core_pkgs="$core_pkgs gcompat"
+        core_pkgs="$core_pkgs gcompat libc6-compat"
     fi
     # 可选依赖：部分功能需要，即使装失败也不致命
     local optional_pkgs="procps nftables socat iproute2 cron lsof"
@@ -1478,8 +1480,10 @@ _install_dependencies() {
         fi
     done
     _archive_extractor >/dev/null 2>&1 || missing="$missing 7z"
-    if command -v apk >/dev/null 2>&1 && [ ! -e /lib/libresolv.so.2 ] && [ ! -e /lib64/libresolv.so.2 ]; then
-        missing="$missing gcompat"
+    if command -v apk >/dev/null 2>&1; then
+        if ! apk info -e gcompat >/dev/null 2>&1 || ! apk info -e libc6-compat >/dev/null 2>&1; then
+            missing="$missing gcompat libc6-compat"
+        fi
     fi
     if [ ! -x "$YQ_BINARY" ]; then
         missing="$missing yq"
