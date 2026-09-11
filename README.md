@@ -47,7 +47,7 @@ bash tests/test-singbox-nowhere.sh
 
 ## 运行要求
 
-脚本面向 Linux 服务器，需要 root 权限。首次运行会按发行版安装 `bash`、`jq`、`openssl`、`flock`、`7z` 等依赖。随附核心包只支持 Linux `x86_64/amd64`；Windows 开发机可执行语法检查和 source-only 测试，但不能直接启动其中的 Linux ELF。
+脚本面向 Linux 服务器，需要 root 权限。首次运行会按发行版安装 `bash`、`jq`、`openssl`、`flock`、`7z` 等依赖；Alpine/musl 系统会额外安装 `gcompat`，用于运行随附的 glibc 核心。随附核心包只支持 Linux `x86_64/amd64`；Windows 开发机可执行语法检查和 source-only 测试，但不能直接启动其中的 Linux ELF。
 
 配置、证书和节点凭据默认保存在 `/usr/local/etc/sing-box`。核心更新会校验归档 SHA-256、归档成员、ELF 文件和现有组合配置，并在服务验证失败时回滚旧核心。
 

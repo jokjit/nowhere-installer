@@ -1394,6 +1394,9 @@ _install_dependencies() {
             fi
         done
         _archive_extractor >/dev/null 2>&1 || missing_cached="$missing_cached 7z"
+        if command -v apk >/dev/null 2>&1 && [ ! -e /lib/libresolv.so.2 ] && [ ! -e /lib64/libresolv.so.2 ]; then
+            missing_cached="$missing_cached gcompat"
+        fi
         if ! _is_podman_environment && ! command -v nft &>/dev/null; then
             missing_cached="$missing_cached nftables"
         fi
@@ -1414,6 +1417,12 @@ _install_dependencies() {
         archive_pkgs="p7zip p7zip-plugins"
     fi
     local core_pkgs="bash curl jq openssl wget tar unzip ca-certificates ${archive_pkgs} ${lock_pkg}"
+    # The bundled x86_64 core is glibc-linked. Alpine uses musl, so install
+    # gcompat before the execution probe; it provides libresolv.so.2 and the
+    # other glibc compatibility libraries needed by the core.
+    if command -v apk >/dev/null 2>&1; then
+        core_pkgs="$core_pkgs gcompat"
+    fi
     # 可选依赖：部分功能需要，即使装失败也不致命
     local optional_pkgs="procps nftables socat iproute2 cron lsof"
 
@@ -1469,6 +1478,9 @@ _install_dependencies() {
         fi
     done
     _archive_extractor >/dev/null 2>&1 || missing="$missing 7z"
+    if command -v apk >/dev/null 2>&1 && [ ! -e /lib/libresolv.so.2 ] && [ ! -e /lib64/libresolv.so.2 ]; then
+        missing="$missing gcompat"
+    fi
     if [ ! -x "$YQ_BINARY" ]; then
         missing="$missing yq"
     fi
