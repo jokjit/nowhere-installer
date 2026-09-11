@@ -50,19 +50,18 @@ sudo sh nowhere.sh restart
 2. 安装结束会直接显示完整 Vector URL。复制这条 URL，并在客户端选择「快速安装 Vector」，粘贴即可完成配置。
 3. 客户端默认 SOCKS5 地址为 `127.0.0.1:1080`。
 
-「快速安装 Vector」现在也支持按客户端表格逐项填写：
+「快速安装 Vector」现在也支持按客户端常用字段逐项填写。若本机已有 Portal 配置，Key 会自动复用：
 
 ```text
 地址       -> vector:// 的主机部分
 端口       -> vector:// 的端口部分
-Key        -> vector:// 的用户名部分
-Spec       -> 兼容输入；Nowhere 官方 URL 没有此字段，生成时忽略
-网络       -> 同时写入 up 和 down（tcp / udp / mix）
-TLS SNI    -> sni=...；自签证书留空并填写 SHA-256 pin
-ALPN       -> alpn=...；留空使用官方默认 now/1
+Key        -> 自动复用本机 Portal 的共享密钥；独立客户端首次配置时需要输入
+网络       -> 同时写入 up 和 down（默认 mix，可选 tcp / udp）
+TLS SNI    -> 默认 `swdist.apple.com`，可改为证书对应的域名
+ALPN       -> 使用官方默认 `now/1`，不再要求填写
 ```
 
-向导也保留完整 `vector://` 粘贴模式。脚本自动生成的自签证书必须使用 `pin`，因为 SNI 只提供名称，不能替代证书指纹校验；使用受信任 CA 证书时才填写证书对应的 SNI。
+向导也保留完整 `vector://` 粘贴模式。脚本自动生成的自签证书会同时输出默认 SNI 和 `pin`；使用受信任 CA 证书时可只使用证书对应的 SNI。
 
 如果自动探测公网 IP 失败，脚本只会额外询问一个公网 IP 或域名。高级模式仍可手动设置监听地址、协议、SOCKS5 账号密码和证书校验方式。
 应用程序使用客户端的 SOCKS5 代理。例如在客户端执行：

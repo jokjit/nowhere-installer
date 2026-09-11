@@ -129,30 +129,25 @@ INPUT
             assert_eq "$CONFIG_URL" 'vector://secret@relay.example:2000?up=tcp&down=tcp&pin=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&socks=127.0.0.1:1080&log=info'
             [ -z "$CLIENT_URL" ] ;;
         quick_vector_fields)
+            detect_public_host() { public_host=198.51.100.10; return 0; }
+            printf '%s\n' 'portal://secret@0.0.0.0:2000?tls=2' > "$CONF_DIR/service.url"
             quick_vector_wizard <<'INPUT'
 1
-relay.example
-443
-secret key
-compat-spec
-tcp
-relay.example
-now/1
+
+
+
+
 INPUT
-            assert_eq "$CONFIG_URL" 'vector://secret%20key@relay.example:443?up=tcp&down=tcp&sni=relay.example&alpn=now%2F1&socks=127.0.0.1:1080&log=info'
+            assert_eq "$CONFIG_URL" 'vector://secret@198.51.100.10:2000?up=mix&down=mix&sni=swdist.apple.com&socks=127.0.0.1:1080&log=info'
             [ -z "$CLIENT_URL" ]
             quick_vector_wizard <<'INPUT'
 1
 relay.example
 443
-secret
-
 udp
-
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-
+custom.example
 INPUT
-            assert_eq "$CONFIG_URL" 'vector://secret@relay.example:443?up=udp&down=udp&pin=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&socks=127.0.0.1:1080&log=info' ;;
+            assert_eq "$CONFIG_URL" 'vector://secret@relay.example:443?up=udp&down=udp&sni=custom.example&socks=127.0.0.1:1080&log=info' ;;
         quick_portal)
             detect_public_host() { public_host=203.0.113.9; return 0; }
             generated_certificate() { printf 'test-cert\n' > "$WORK_DIR/cert.pem"; printf 'test-key\n' > "$WORK_DIR/key.pem"; }
@@ -160,9 +155,10 @@ INPUT
             openssl() { if [ "$1" = rand ]; then printf '%064d\n' 1; else return 0; fi; }
             quick_portal_wizard <<'INPUT'
 2000
+tcp
 INPUT
             case "$CONFIG_URL" in portal://*'@0.0.0.0:2000?tls=2&crt='*) ;; *) exit 1 ;; esac
-            case "$CLIENT_URL" in vector://*'@203.0.113.9:2000?up=tcp&down=tcp&pin='*) ;; *) exit 1 ;; esac
+            case "$CLIENT_URL" in vector://*'@203.0.113.9:2000?up=tcp&down=tcp&sni=swdist.apple.com&pin='*) ;; *) exit 1 ;; esac
             valid_pin "$CERT_PIN"
             [ -s "$WORK_DIR/cert.pem" ] ;;
         portal_certificate)

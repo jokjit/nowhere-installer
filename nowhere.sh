@@ -406,8 +406,9 @@ certificate_pin() {
 
 client_verification_wizard() {
     if [ "${CERT_MODE:-generated}" = generated ]; then
-        CLIENT_TLS_QUERY="pin=$CERT_PIN"
-        CLIENT_TLS_LABEL="SNI：不需要（自签名证书使用 pin 指纹校验）"
+        client_sni=${CLIENT_SNI_DEFAULT:-swdist.apple.com}
+        CLIENT_TLS_QUERY="sni=$(url_encode "$client_sni")&pin=$CERT_PIN"
+        CLIENT_TLS_LABEL="SNI：$client_sni；pin：$CERT_PIN"
         return
     fi
     say '客户端证书校验：1) 使用证书指纹 pin  2) 使用域名 SNI（证书必须由系统信任的 CA 签发）'
@@ -474,10 +475,11 @@ portal_wizard() {
 }
 
 quick_portal_wizard() {
-    say '快速安装 Portal：只需输入端口，密钥和证书会自动生成。'
+    say '快速安装 Portal：地址自动使用公网 IP，密钥和证书自动生成。'
     listen_host=0.0.0.0
     ask_port '监听端口' 2000
     listen_port=$REPLY
+    ask_transport '客户端网络（上行和下行使用同一协议）'; transport=$REPLY
     if detect_public_host; then
         say "自动检测到公网地址：$public_host"
     else
@@ -492,16 +494,17 @@ quick_portal_wizard() {
     openssl pkey -in "$WORK_DIR/key.pem" -passin pass: -pubout > "$WORK_DIR/key.pub" 2>/dev/null || die '私钥无效。'
     cmp -s "$WORK_DIR/cert.pub" "$WORK_DIR/key.pub" || die '证书和私钥不匹配。'
     certificate_pin "$WORK_DIR/cert.pem"
+    CLIENT_SNI_DEFAULT=swdist.apple.com
     client_verification_wizard
     CONFIG_URL="portal://$ENCODED_KEY@$listen_host:$listen_port?tls=2&crt=$CONF_DIR/cert.pem&key=$CONF_DIR/key.pem&log=info"
-    CLIENT_URL="vector://$ENCODED_KEY@$public_host:$listen_port?up=tcp&down=tcp&$CLIENT_TLS_QUERY&socks=127.0.0.1:1080&log=info"
-    say "Portal 将监听 $listen_host:$listen_port（TCP + UDP）。"
+    CLIENT_URL="vector://$ENCODED_KEY@$public_host:$listen_port?up=$transport&down=$transport&$CLIENT_TLS_QUERY&socks=127.0.0.1:1080&log=info"
+    say "Portal 将监听 $listen_host:$listen_port（TCP + UDP），客户端网络：$transport。"
     show_node_info
 }
 
 ask_transport() {
     while :; do
-        ask "$1（tcp / udp / mix）" tcp
+        ask "$1（tcp / udp / mix）" mix
         case "$REPLY" in tcp|udp|mix) return ;; *) warn '仅支持 tcp、udp、mix。' ;; esac
     done
 }
@@ -578,47 +581,39 @@ quick_vector_url_wizard() {
 }
 
 quick_vector_wizard() {
-    say '快速安装 Vector：1) 按地址、端口、Key 等字段填写  2) 粘贴完整 Vector URL'
+    say '快速安装 Vector：1) 填写地址、端口、SNI、网络  2) 粘贴完整 Vector URL'
     ask '请选择' 1
     case "$REPLY" in
         1)
-            ask_host '地址（Portal 公网 IP 或域名）'; remote_host=$REPLY
+            if detect_public_host; then
+                say "默认地址：$public_host"
+            else
+                public_host=
+            fi
+            ask_host '地址（留空使用默认公网 IP）' "${public_host:-}"; remote_host=$REPLY
             ask_port '端口' 2000; remote_port=$REPLY
-            ask_key 'Key（Portal 共享密钥，填写原始值）' required
-            ask 'Spec（兼容字段，Nowhere 官方协议不使用，可留空）' ''
-            spec_value=$REPLY
-            [ -z "$spec_value" ] || say 'Spec 已记录为兼容输入，生成 URL 时按 Nowhere 官方格式忽略。'
+            if [ -s "$CONF_DIR/service.url" ]; then
+                ENCODED_KEY=$(sed -n 's#^portal://\([^@]*\)@.*#\1#p' "$CONF_DIR/service.url" | head -n 1)
+                [ -n "$ENCODED_KEY" ] || ask_key 'Key（Portal 共享密钥，填写原始值）' required
+                [ -n "$ENCODED_KEY" ] && say '已复用本机 Portal 的共享 Key。'
+            else
+                ask_key 'Key（Portal 共享密钥，填写原始值）' required
+            fi
             ask_transport '网络（上行和下行使用同一协议）'; transport=$REPLY
-            ask 'TLS SNI（域名证书填写；自签证书请留空并填写 pin）' ''
+            ask 'TLS SNI' swdist.apple.com
             sni_value=$REPLY
             case "$sni_value" in
                 *:*|\[*\]|*[!a-zA-Z0-9.-]*)
                     [ -z "$sni_value" ] || die 'TLS SNI 必须是 DNS 域名，不能填写 IP、端口或路径。' ;;
             esac
-            tls_query=
-            if [ -n "$sni_value" ]; then
-                tls_query="&sni=$(url_encode "$sni_value")"
-            else
-                ask '证书 SHA-256 pin（自签证书必填；可带冒号）' ''
-                pin_value=$(printf '%s' "$REPLY" | tr -d ':' | tr 'A-F' 'a-f')
-                valid_pin "$pin_value" || die '未填写有效 pin。域名证书请返回上一步填写 TLS SNI。'
-                tls_query="&pin=$pin_value"
-            fi
-            ask 'ALPN（留空使用 Nowhere 默认 now/1）' ''
-            alpn_value=$REPLY
-            case "$alpn_value" in
-                *[!a-zA-Z0-9._/-]*) [ -z "$alpn_value" ] || die 'ALPN 只能包含字母、数字、点、下划线、斜线或连字符。' ;;
-            esac
-            alpn_query=
-            [ -z "$alpn_value" ] || alpn_query="&alpn=$(url_encode "$alpn_value")"
-            CONFIG_URL="vector://$ENCODED_KEY@$remote_host:$remote_port?up=$transport&down=$transport${tls_query}${alpn_query}&socks=127.0.0.1:1080&log=info"
+            [ -n "$sni_value" ] || sni_value=swdist.apple.com
+            CONFIG_URL="vector://$ENCODED_KEY@$remote_host:$remote_port?up=$transport&down=$transport&sni=$(url_encode "$sni_value")&socks=127.0.0.1:1080&log=info"
             CLIENT_URL=
             say 'Vector 配置完成，本地 SOCKS5：127.0.0.1:1080'
-            say '注意：Spec 留空或填写都不会写入 vector://，因为 Nowhere 官方 URL 没有 Spec 参数。'
             say "节点地址：$remote_host"
             say "节点端口：$remote_port"
-            [ -n "$sni_value" ] && say "TLS SNI：$sni_value" || say "TLS SNI：不设置（pin：$pin_value）"
-            [ -n "$alpn_value" ] && say "ALPN：$alpn_value" || say 'ALPN：now/1（默认）'
+            say "TLS SNI：$sni_value"
+            say 'ALPN：now/1（默认）'
             say '完整 Vector 节点：'
             say "$CONFIG_URL"
             ;;
