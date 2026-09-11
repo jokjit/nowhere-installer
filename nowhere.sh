@@ -18,6 +18,7 @@ ROLLBACK_PENDING=0
 WAS_ACTIVE=0
 INPUT_FD=0
 INIT_SYSTEM=
+MANAGER_URL="https://raw.githubusercontent.com/$REPO/master/nowhere.sh"
 
 say() { printf '%s\n' "$*"; }
 warn() { printf '提示：%s\n' "$*" >&2; }
@@ -531,7 +532,9 @@ OPENRC_EOF
     if [ -f "$0" ] && [ "$0" != "$MANAGER" ]; then
         atomic_copy "$0" "$MANAGER" 755
     elif [ ! -f "$MANAGER" ]; then
-        warn '通过管道执行时无法保存管理脚本；以后请重新下载本脚本运行。'
+        # When started as curl | sh, fetch a managed copy for later operations.
+        fetch "$MANAGER_URL" "$WORK_DIR/manager" || die '无法保存管理脚本，请稍后重新下载脚本。'
+        atomic_copy "$WORK_DIR/manager" "$MANAGER" 755
     fi
     printf '%s\n' nowhere-interactive-v1 > "$CONF_DIR/managed-by"
 }
@@ -574,7 +577,11 @@ install_action() {
     service_enable
     ROLLBACK_PENDING=0
     say '安装完成，服务已启动并启用开机自启。'
-    show_info
+    say "版本：$RELEASE；服务管理：$INIT_SYSTEM；配置目录：$CONF_DIR"
+    say "管理命令：sudo $MANAGER"
+    if [ -s "$CONF_DIR/client.url" ]; then
+        say "Portal 的客户端连接配置已保存到：$CONF_DIR/client.url（权限 600）"
+    fi
 }
 
 update_action() {
