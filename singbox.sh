@@ -3700,7 +3700,7 @@ _add_nowhere() {
         client_server_addr="${BATCH_IP:-$server_ip}"
         port="$BATCH_PORT"
         network_choice="${BATCH_NOWHERE_NETWORK:-tcp+udp}"
-        sni="${BATCH_SNI:-nowhere.local}"
+        sni="${BATCH_SNI:-www.amd.com}"
         password="${BATCH_PASSWORD:-}"
         carrier="$(_nowhere_carrier_for_network "$network_choice")"
         name="Batch-Nowhere-${port}"
@@ -5675,11 +5675,11 @@ _view_nodes() {
                     nowhere_server=$(printf '%s' "$nowhere_json" | jq -r '.server // empty')
                     nowhere_password=$(printf '%s' "$nowhere_json" | jq -r '.password // empty')
                     nowhere_pin=$(printf '%s' "$nowhere_json" | jq -r '.pin // empty')
-                    nowhere_sni=$(printf '%s' "$nowhere_json" | jq -r '.tls.server_name // "nowhere.local"')
+                    nowhere_sni=$(printf '%s' "$nowhere_json" | jq -r '.tls.server_name // "www.amd.com"')
                     nowhere_carrier=$(printf '%s' "$nowhere_json" | jq -r '.up // "tcp"')
                 else
                     nowhere_pin=$(jq -r --arg t "$tag" '.[$t].certificatePin // empty' "$METADATA_FILE" 2>/dev/null)
-                    nowhere_sni=$(jq -r --arg t "$tag" '.[$t].serverName // "nowhere.local"' "$METADATA_FILE" 2>/dev/null)
+                    nowhere_sni=$(jq -r --arg t "$tag" '.[$t].serverName // "www.amd.com"' "$METADATA_FILE" 2>/dev/null)
                     nowhere_carrier=$(jq -r --arg t "$tag" '.[$t].carrier // "tcp"' "$METADATA_FILE" 2>/dev/null)
                     nowhere_server=$(jq -r --arg t "$tag" '.[$t].clientServer // empty' "$METADATA_FILE" 2>/dev/null)
                     [ -n "$nowhere_server" ] || nowhere_server="$display_ip"
@@ -6292,7 +6292,7 @@ _refresh_modified_node_artifacts() {
     case "$variant" in
         nowhere)
             password=$(printf '%s' "$node" | jq -r '.password // empty')
-            sni=$(printf '%s' "$node" | jq -r '.tls.server_name // "nowhere.local"')
+            sni=$(printf '%s' "$node" | jq -r '.tls.server_name // "www.amd.com"')
             cert_path=$(printf '%s' "$node" | jq -r '.tls.certificate_path // empty')
             key_path=$(printf '%s' "$node" | jq -r '.tls.key_path // empty')
             pin=$(_cert_sha256_hex "$cert_path" 2>/dev/null || true)
