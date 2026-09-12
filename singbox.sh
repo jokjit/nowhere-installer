@@ -3729,8 +3729,8 @@ _add_nowhere() {
         if _check_port_conflict "$port" "$port_proto"; then
             return 1
         fi
-        read -r -p "请输入 TLS SNI/证书域名 (默认 nowhere.local): " sni
-        sni=${sni:-nowhere.local}
+        read -r -p "请输入 TLS SNI/证书域名 (默认 swdist.apple.com): " sni
+        sni=${sni:-swdist.apple.com}
         [[ "$sni" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { _error "SNI 只能包含字母、数字、点、下划线和连字符。"; return 1; }
         read -r -s -p "请输入共享密码 (回车随机生成): " password; echo
         password=${password:-$(_nowhere_random_password)}
