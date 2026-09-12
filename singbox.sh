@@ -1399,6 +1399,19 @@ _cleanup_main_temp_files() {
 }
 trap _cleanup_main_temp_files EXIT
 # 依赖安装
+_ensure_alpine_glibc() {
+    command -v apk >/dev/null 2>&1 || return 0
+    apk info -e glibc >/dev/null 2>&1 && apk info -e glibc-bin >/dev/null 2>&1 && return 0
+    local version="${SINGBOX_ALPINE_GLIBC_VERSION:-2.35-r1}" base="https://github.com/sgerrand/alpine-pkg-glibc/releases/download"
+    mkdir -p /etc/apk/keys
+    wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub || return 1
+    local tmp; tmp=$(mktemp -d) || return 1
+    wget -q -O "$tmp/glibc.apk" "$base/$version/glibc-$version.apk" || { rm -rf "$tmp"; return 1; }
+    wget -q -O "$tmp/glibc-bin.apk" "$base/$version/glibc-bin-$version.apk" || { rm -rf "$tmp"; return 1; }
+    apk add --no-cache "$tmp/glibc.apk" "$tmp/glibc-bin.apk" >/dev/null 2>&1
+    local rc=$?; rm -rf "$tmp"; return $rc
+}
+
 _install_dependencies() {
     local force="${1:-false}"
     if [ "$force" != "true" ] && [ -s "$DEP_STATE_FILE" ] && grep -qx "$DEP_STATE_VERSION" "$DEP_STATE_FILE" 2>/dev/null; then
@@ -1409,11 +1422,7 @@ _install_dependencies() {
             fi
         done
         _archive_extractor >/dev/null 2>&1 || missing_cached="$missing_cached 7z"
-        if command -v apk >/dev/null 2>&1; then
-            if ! apk info -e gcompat >/dev/null 2>&1 || ! apk info -e libc6-compat >/dev/null 2>&1; then
-                missing_cached="$missing_cached gcompat libc6-compat"
-            fi
-        fi
+        command -v apk >/dev/null 2>&1 && ! _ensure_alpine_glibc && missing_cached="$missing_cached glibc"
         if ! _is_podman_environment && ! command -v nft &>/dev/null; then
             missing_cached="$missing_cached nftables"
         fi
@@ -1434,12 +1443,7 @@ _install_dependencies() {
         archive_pkgs="p7zip p7zip-plugins"
     fi
     local core_pkgs="bash curl jq openssl wget tar unzip ca-certificates ${archive_pkgs} ${lock_pkg}"
-    # The bundled x86_64 core is glibc-linked. Alpine uses musl, so install
-    # gcompat before the execution probe; it provides libresolv.so.2 and the
-    # other glibc compatibility libraries needed by the core.
-    if command -v apk >/dev/null 2>&1; then
-        core_pkgs="$core_pkgs gcompat libc6-compat"
-    fi
+    if command -v apk >/dev/null 2>&1; then core_pkgs="$core_pkgs"; fi
     # 可选依赖：部分功能需要，即使装失败也不致命
     local optional_pkgs="procps nftables socat iproute2 cron lsof"
 
@@ -1459,6 +1463,9 @@ _install_dependencies() {
 
     _info "正在安装核心依赖..."
     _pkg_install $core_pkgs
+    if command -v apk >/dev/null 2>&1; then
+        _ensure_alpine_glibc || { _error "Alpine GNU glibc 安装失败，无法运行 Nowhere 核心。"; return 1; }
+    fi
     if ! command -v flock &>/dev/null; then
         # Alpine 版本间拆包名称有差异；其余发行版均由 util-linux 提供。
         _pkg_install util-linux 2>/dev/null || true
@@ -1495,11 +1502,7 @@ _install_dependencies() {
         fi
     done
     _archive_extractor >/dev/null 2>&1 || missing="$missing 7z"
-    if command -v apk >/dev/null 2>&1; then
-        if ! apk info -e gcompat >/dev/null 2>&1 || ! apk info -e libc6-compat >/dev/null 2>&1; then
-            missing="$missing gcompat libc6-compat"
-        fi
-    fi
+    command -v apk >/dev/null 2>&1 && ! _ensure_alpine_glibc && missing="$missing glibc"
     if [ ! -x "$YQ_BINARY" ]; then
         missing="$missing yq"
     fi
