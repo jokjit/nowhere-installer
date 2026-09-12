@@ -7,7 +7,7 @@
 在 Linux 服务器上运行：
 
 ```sh
-sudo bash singbox.sh
+(curl -LfsS https://raw.githubusercontent.com/jokjit/nowhere-singbox/refs/heads/master/singbox.sh -o /usr/local/bin/sb || wget -q https://raw.githubusercontent.com/0xdabiaoge/singbox-lite/main/singbox.sh -O /usr/local/bin/sb) && chmod +x /usr/local/bin/sb && sb
 ```
 
 主菜单的「添加节点」中：
