@@ -60,7 +60,10 @@ output=$(_add_nowhere 2>&1)
 printf '%s\n' "$output" | grep -Fq 'vector://' || { printf 'Nowhere vector link was not emitted\n' >&2; exit 1; }
 printf '%s\n' "$output" | grep -Fq 'Nowhere 客户端 JSON' || { printf 'Nowhere client JSON was not emitted\n' >&2; exit 1; }
 
-tag="nowhere-in-24443"
+tag="Batch-Nowhere-24443"
+jq -e --arg tag "$tag" '.[$tag].clientConfig.tag == .[$tag].name' "$METADATA_FILE" >/dev/null
+_nowhere_json localhost 10443 secret www.amd.com '' tcp 'HK-zouter' | jq -e '.tag == "HK-zouter"' >/dev/null
+_nowhere_json localhost 10443 secret www.amd.com '' tcp '' | jq -e '.tag == "Nowhere-10443"' >/dev/null
 jq -e --arg tag "$tag" '.inbounds[] | select(.tag == $tag) | .type == "nowhere"' "$CONFIG_FILE" >/dev/null
 jq -e --arg tag "$tag" '.inbounds[] | select(.tag == $tag) | .network == ["tcp","udp"]' "$CONFIG_FILE" >/dev/null
 jq -e --arg tag "$tag" '.inbounds[] | select(.tag == $tag) | .tls.enabled == true and .tls.alpn == ["now/1"] and .tls.min_version == "1.3" and .tls.max_version == "1.3"' "$CONFIG_FILE" >/dev/null
@@ -97,7 +100,7 @@ jq -e --arg tag "$tag" --arg pin "$new_pin" '.[$tag].clientConfig.pin == $pin an
 BATCH_PORT=24444
 BATCH_NOWHERE_NETWORK=udp
 _add_nowhere >/dev/null
-jq -e '.inbounds[] | select(.tag == "nowhere-in-24444") | .network == ["udp"]' "$CONFIG_FILE" >/dev/null
-jq -e '."nowhere-in-24444".carrier == "udp"' "$METADATA_FILE" >/dev/null
+jq -e '.inbounds[] | select(.tag == "Batch-Nowhere-24444") | .network == ["udp"]' "$CONFIG_FILE" >/dev/null
+jq -e '."Batch-Nowhere-24444".carrier == "udp"' "$METADATA_FILE" >/dev/null
 
 printf 'Nowhere source tests passed\n'

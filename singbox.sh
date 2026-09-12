@@ -3688,9 +3688,9 @@ _nowhere_carrier_for_network() {
 }
 
 _nowhere_json() {
-    local server="$1" port="$2" password="$3" sni="$4" pin="$5" carrier="$6"
-    jq -n --arg s "$server" --arg p "$port" --arg pw "$password" --arg sn "$sni" --arg pin "$pin" --arg carrier "$carrier" \
-        '{type:"nowhere",server:$s,server_port:($p|tonumber),password:$pw,up:$carrier,down:$carrier,tls:{enabled:true,server_name:$sn,alpn:["now/1"],min_version:"1.3",max_version:"1.3"}} + (if $pin != "" then {pin:$pin} else {} end)'
+    local server="$1" port="$2" password="$3" sni="$4" pin="$5" carrier="$6" name="${7:-Nowhere-$2}"
+    jq -n --arg name "$name" --arg s "$server" --arg p "$port" --arg pw "$password" --arg sn "$sni" --arg pin "$pin" --arg carrier "$carrier" \
+        '{type:"nowhere",tag:$name,server:$s,server_port:($p|tonumber),password:$pw,up:$carrier,down:$carrier,tls:{enabled:true,server_name:$sn,alpn:["now/1"],min_version:"1.3",max_version:"1.3"}} + (if $pin != "" then {pin:$pin} else {} end)'
 }
 
 _add_nowhere() {
@@ -3729,8 +3729,8 @@ _add_nowhere() {
         if _check_port_conflict "$port" "$port_proto"; then
             return 1
         fi
-        read -r -p "请输入 TLS SNI/证书域名 (默认 swdist.apple.com): " sni
-        sni=${sni:-swdist.apple.com}
+        read -r -p "请输入 TLS SNI/证书域名 (默认 www.amd.com): " sni
+        sni=${sni:-www.amd.com}
         [[ "$sni" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { _error "SNI 只能包含字母、数字、点、下划线和连字符。"; return 1; }
         read -r -s -p "请输入共享密码 (回车随机生成): " password; echo
         password=${password:-$(_nowhere_random_password)}
@@ -3915,7 +3915,7 @@ _show_node_link() {
             # Nowhere has no widely adopted URI scheme. Emit the native
             # sing-box outbound JSON, including the pinned leaf certificate.
             local password="$1" sni="$2" pin="$3" carrier="${4:-tcp}"
-            client_json=$(_nowhere_json "$metadata_ip" "$port" "$password" "$sni" "$pin" "$carrier") || return 1
+            client_json=$(_nowhere_json "$metadata_ip" "$port" "$password" "$sni" "$pin" "$carrier" "$name") || return 1
             url="vector://$(_url_encode "$password")@${link_ip}:${port}?up=${carrier}&down=${carrier}&sni=$(_url_encode "$sni")"
             [ -n "$pin" ] && url="${url}&pin=${pin}"
             url="${url}&socks=127.0.0.1:1080#$(_url_encode "$name")"
@@ -5696,7 +5696,7 @@ _view_nodes() {
                     url="${url}&socks=127.0.0.1:1080#$(_url_encode "$display_name")"
                     _info "  类型: Nowhere, 地址: ${nowhere_server}, 端口: ${port}"
                     echo "  客户端 JSON:"
-                    printf '%s\n' "$nowhere_json" | jq .
+                    printf '%s\n' "$nowhere_json" | jq --arg name "${display_name:-Nowhere-${port}}" '.tag = $name'
                 fi
                 ;;
             "shadowsocks")
