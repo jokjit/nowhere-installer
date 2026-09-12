@@ -3755,7 +3755,12 @@ _add_nowhere() {
     [[ "$password" != *[[:space:]]* ]] || { _error "密码不能包含空白字符。"; return 1; }
     [[ "$client_server_addr" != *[[:space:]/?#]* && "$client_server_addr" != *"://" ]] || { _error "连接地址格式无效。"; return 1; }
 
-    tag="nowhere-in-${port}"
+    # Use the entered node name as the inbound tag; keep the protocol/port
+    # fallback when the prompt was left empty and make it safe for filenames.
+    if [ -n "${name:-}" ]; then
+        tag=$(printf '%s' "$name" | sed 's#[/\\:*?"<>|]#-#g; s/[[:space:]][[:space:]]*/-/g; s/^[.-]*//; s/[.-]*$//')
+    fi
+    tag=${tag:-"nowhere-in-${port}"}
     cert_path="${SINGBOX_DIR}/${tag}.pem"
     key_path="${SINGBOX_DIR}/${tag}.key"
     _generate_self_signed_cert "$sni" "$cert_path" "$key_path" || return 1
