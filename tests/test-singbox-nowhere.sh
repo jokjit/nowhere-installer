@@ -37,6 +37,18 @@ printf '%s\n' 'proxies: []' > "$CLASH_YAML_FILE"
 
 # The test owns the state lock so atomic helpers do not require a host flock.
 export SINGBOXLITE_LOCK_HELD=1
+
+# Reproduce the empty relay arrays that break the bundled core's merge filter.
+merge_fixture="$TEST_ROOT/merge.json"
+printf '%s\n' '{"inbounds":[],"outbounds":[{"type":"direct","tag":"direct"}],"route":{"rules":[],"final":"direct"},"experimental":{"items":[]}}' > "$merge_fixture"
+_normalize_nowhere_merge_config_locked "$merge_fixture"
+jq -e 'has("inbounds") == false and .outbounds == [{"type":"direct","tag":"direct"}] and .route == {"final":"direct"} and .experimental.items == []' "$merge_fixture" >/dev/null
+before=$(cat "$merge_fixture")
+_normalize_nowhere_merge_config_locked "$merge_fixture"
+[ "$before" = "$(cat "$merge_fixture")" ]
+_normalize_nowhere_merge_config_locked "$RELAY_CONFIG_FILE"
+jq -e '. == {"route":{}}' "$RELAY_CONFIG_FILE" >/dev/null
+
 server_ip=127.0.0.1
 BATCH_MODE=true
 BATCH_IP=127.0.0.1

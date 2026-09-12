@@ -768,11 +768,26 @@ _ensure_relay_config() {
 }
 
 # 服务始终同时加载 config.json 和 relay.json；所有校验必须复现真实启动参数。
+_normalize_nowhere_merge_config_locked() {
+    local file="$1"
+    # The bundled core's filter turns empty arrays into null before merging.
+    jq empty "$file" >/dev/null 2>&1 || return 1
+    if jq -e '.inbounds == [] or .outbounds == [] or .route.rules == []' "$file" >/dev/null; then
+        _atomic_modify_json_locked "$file" '
+            if .inbounds == [] then del(.inbounds) else . end |
+            if .outbounds == [] then del(.outbounds) else . end |
+            if .route.rules == [] then del(.route.rules) else . end
+        ' || return 1
+    fi
+}
+
 _check_combined_config_files() {
     local binary="${1:-$SINGBOX_BIN}" main_config="${2:-$CONFIG_FILE}" relay_config="${3:-$RELAY_CONFIG_FILE}"
     [ -x "$binary" ] || { _error "sing-box 核心不可执行: $binary"; return 1; }
     [ -s "$main_config" ] || { _error "主配置不存在或为空: $main_config"; return 1; }
     [ -s "$relay_config" ] || { _error "中转配置不存在或为空: $relay_config"; return 1; }
+    _with_state_lock _normalize_nowhere_merge_config_locked "$main_config" || return 1
+    _with_state_lock _normalize_nowhere_merge_config_locked "$relay_config" || return 1
     "$binary" check -c "$main_config" -c "$relay_config"
 }
 
